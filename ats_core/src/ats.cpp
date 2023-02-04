@@ -129,8 +129,8 @@ bool Ats::setRate(double rate)
 
 uint32_t kth_smallest(uint32_t a[], int n, int k)
 {
-    register int      i, j, l, m;
-    register uint32_t x, tmp;
+    int      i, j, l, m;
+    uint32_t x, tmp;
 
     l = 0;
     m = n - 1;
@@ -277,7 +277,7 @@ bool Ats::config(Config *config)
         config->outRate = 1;
 
     mAts->trackStep0 = ats_4f28u_one() + (int)((float)(config->inRate - config->outRate) / config->outRate * ats_4f28u_one() + 0.5);
-    mAts->maxIntDivT = (int32_t)(4.294967296F * config->inRate);
+    mAts->maxIntDivT = (int32_t)(4.294967296F * config->inRate * (1<<10));
     mAts->step       = mAts->trackStep0;
 
     if (config->filterPush > (int)(sizeof(mAts->pushOffset) / sizeof(uint32_t)))
@@ -400,23 +400,23 @@ void Ats::trace(std::FILE *f)
 // MAIN PUSH AND POP
 //
 
-void Ats::push(int samples, int sampleStride, int channelStride, int32_t *data, uint64_t callTime)
+void Ats::push(int samples, int sampleStride, int channelStride, int32_t *data, int64_t callTime)
 {
     ats_t *p = (ats_t *)mData;
     assert(p->configs > 0);
-    assert(samples > 0 && (data == nullptr || samples < p->config.bufferSamples)); // Could have a miss longer than the buffer
-    if (data)
-        assert(sampleStride > 0 && channelStride > 0);
+    assert(data!=nullptr);
+    assert(samples>0);
+    assert((sampleStride==0 && channelStride==0) || samples < p->config.bufferSamples); // Could have a miss longer than the buffer
 
-    uint64_t now_ns = Chrono::nowNs();
+    if (callTime<1000000000) callTime = Chrono::nowNs() - callTime;
 
-    p->chrono[PUSH].event(now_ns);
-    p->chrono[PUSH_RATE].event(now_ns-callTime,samples);
+    p->chrono[PUSH].event(callTime);
+    p->chrono[PUSH_RATE].event(callTime,samples);
     p->chrono[PUSH_EXEC].restart(); // Restart the chrono used to calculate the time in this routine
 
     // Convert sample point and time to 0..2^32.
     if (p->config.filterPush) {
-        uint32_t offset               = (uint32_t)((((uint64_t)p->in + samples) << (32 - ATS_BUFFER_SIZE_LOG2)) - (((now_ns - callTime) * p->maxIntDivT) >> (ATS_BUFFER_SIZE_LOG2)));
+        uint32_t offset               = (uint32_t)((((uint64_t)p->in + samples) << (32 - ATS_BUFFER_SIZE_LOG2)) - (((callTime) * p->maxIntDivT) >> (10 + ATS_BUFFER_SIZE_LOG2)));
         p->pushOffsetN                = (p->pushOffsetN + 1) % p->config.filterPush;
         p->pushOffset[p->pushOffsetN] = offset;
     }
@@ -437,17 +437,23 @@ void Ats::push(int samples, int sampleStride, int channelStride, int32_t *data, 
     p->chrono[PUSH_EXEC].event(); // Record the execution time
 }
 
+void Ats::skip(int samples)
+{
+    int32_t zero = 0;
+    push(samples, 0, 0, &zero);
+}
+
 void atsInterp(ats_t *p, int samples, int sample_stride, int channel_stride, AtsData *data);
 
-void Ats::pop(int samples, int sampleStride, int channelStride, AtsData *dst, uint64_t callTime)
+void Ats::pop(int samples, int sampleStride, int channelStride, AtsData *dst, int64_t callTime)
 {
     ats_t *p = (ats_t *)mData;
     assert(p->configs > 0);
 
-    uint64_t now_ns = Chrono::nowNs();
-
-    p->chrono[POP].event(now_ns);
-    p->chrono[POP_RATE].event(now_ns-callTime,samples);
+    if (callTime<10000000000) callTime = Chrono::nowNs() - callTime;
+        
+    p->chrono[POP].event(callTime);
+    p->chrono[POP_RATE].event(callTime,samples);
     p->chrono[POP_EXEC].restart();
 
     // Invariant based on first sample - as this is closest to what is about to be played out
@@ -455,7 +461,7 @@ void Ats::pop(int samples, int sampleStride, int channelStride, AtsData *dst, ui
         p->popOffsetN = (p->popOffsetN + 1) % p->config.filterPop;
         p->popOffset[p->popOffsetN]  = (uint32_t)( ( (uint64_t)p->outN<<(32-ATS_BUFFER_SIZE_LOG2)) +
                                                    (           p->outF>>(ATS_BUFFER_SIZE_LOG2-4))  -			// Include fractional part
-                                                   (((now_ns - callTime)*p->maxIntDivT)>>(ATS_BUFFER_SIZE_LOG2)) );
+                                                   (((callTime)*p->maxIntDivT)>>(10+ATS_BUFFER_SIZE_LOG2)) );
     }
 
     int need = ats_4f28u_advance(p->outF, p->step, samples); // Precise calc of required samples - how far outN will move
@@ -471,7 +477,7 @@ void Ats::pop(int samples, int sampleStride, int channelStride, AtsData *dst, ui
     p->chrono[POP_EXEC].event();
 }
 
-void Ats::pop(int samples, int sampleStride, int channelStride, int32_t *data, uint64_t callTime)
+void Ats::pop(int samples, int sampleStride, int channelStride, int32_t *data, int64_t callTime)
 {
     // NOTE THAT THIS IS AN INPLACE CONVERSION FLOAT -> INT   INTS are briefly 'invalid'
     // SHOULD CHECK HERE THAT AtsData == float - otherwise we are already fixed point

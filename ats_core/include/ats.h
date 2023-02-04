@@ -201,9 +201,10 @@ class Ats
 
     bool          config(Config *config);              // Set parameters = not if channels or buffer size changes, then all buffers are reset
     const Config *getConfig(Config *config = nullptr); // Grab a reference or copy the configuration
-    void          push(int samples, int sampleStride, int channelStride, int32_t *data, uint64_t callTime = 0);
-    void          pop(int samples, int sampleStride, int channelStride, AtsData *dst, uint64_t callTime = 0);
-    void          pop(int samples, int sampleStride, int channelStride, int32_t *dst, uint64_t callTime = 0);
+    void          push(int samples, int sampleStride, int channelStride, int32_t *data, int64_t callTime = 0);
+    void          skip(int samples);                  
+    void          pop(int samples, int sampleStride, int channelStride, AtsData *dst, int64_t callTime = 0);
+    void          pop(int samples, int sampleStride, int channelStride, int32_t *dst, int64_t callTime = 0);
     int           getDepth();                                    // Get the current buffer depth
     void          setDepth(int depth);                           // Asynchronously set the depth (will not be the exact latency)
     float         getLatency();                                  // Most recent estimate of the latency, time adjusted.  We cannot set this but we can nudge it

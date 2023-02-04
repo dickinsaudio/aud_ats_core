@@ -73,9 +73,9 @@
 
 namespace Audinate { namespace chrono {
 
-typedef int64_t ChronoTime; // Make general use of a 64 bit counter as our wall clock
+typedef int64_t ChronoTime;         // Time is 64 bit nanoseconds - which is about 300 years
 
-#define NS_PER_SECOND 1000000000
+chrono_clock Chrono::clock = MONO;
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // PLATFORM DEPENDENT TIMER
@@ -88,11 +88,9 @@ typedef int64_t ChronoTime; // Make general use of a 64 bit counter as our wall 
 inline ChronoTime chronoGetCounter(void)
 {
     timespec now;
-    clock_gettime(CLOCK_MONOTONIC_RAW, &now);
-    return (ChronoTime)now.tv_sec * 10000000 + now.tv_nsec / 100;
+    clock_gettime(Chrono::getClock(), &now);
+    return (ChronoTime)now.tv_sec * 1000000000 + now.tv_nsec;
 };
-const static ChronoTime chronoFreq = 10000000;
-inline ChronoTime       chronoGetFreq(void) { return chronoFreq; };
 
 #endif
 #ifdef ARDUINO
@@ -103,30 +101,21 @@ inline ChronoTime  chrono_get_counter(void)
         chronoTimer = timerBegin(1, 8, true);
     return timerRead(chronoTimer);
 };
-const static ChronoTime chronoFreq = 10000000;
-inline ChronoTime       chronoGetFreq(void) { return chronoFreq; };
 #endif
 #ifdef _WIN32
 inline ChronoTime chronoGetCounter(void)
 {
-    ChronoTime now;
+    ChronoTime now*100;
     QueryPerformanceCounter((LARGE_INTEGER *)&now);
     return now;
 };
-inline ChronoTime chronoGetFreq(void)
-{
-    ChronoTime freq;
-    QueryPerformanceFrequency((LARGE_INTEGER *)&freq);
-    return freq;
-};
-const static ChronoTime chronoFreq = 10000000;
 #endif
 
 inline timespec chronoNativeTimespec(ChronoTime t)
 {
     timespec ret;
-    ret.tv_sec  = t / chronoFreq;
-    ret.tv_nsec = (int32_t)((float)(t % chronoFreq) * 1E9F / (float)chronoFreq);
+    ret.tv_sec  = t / 1000000000;
+    ret.tv_nsec = t % 1000000000;
     return ret;
 };
 
@@ -197,7 +186,6 @@ struct chrono_t // Struct for machine specific timing stamp
 
 Chrono::Chrono()
 {
-    assert(NS_PER_SECOND / chronoFreq == 1E9F / chronoFreq); // Ensure the timer resolution is integral
     assert(sizeof(mData) >= sizeof(chrono_t));               // Ensure hidden data allocation is sufficient
 
     chrono_t *p = (chrono_t *)mData;
@@ -233,7 +221,6 @@ bool Chrono::config(float bin0, float binN, int bins, HistFlag flags, const char
     chrono_t *p = (chrono_t *)mData;
     assert(bins > 1);
     assert(binN > bin0);
-    assert(chronoFreq == chronoGetFreq()); // Ensure compile time frequency is correct
 
     if (p->configs > 0 && (p->flags & COUNTER))
         flags = (HistFlag)(flags | COUNTER);
@@ -245,9 +232,8 @@ bool Chrono::config(float bin0, float binN, int bins, HistFlag flags, const char
     if (bins > (sizeof(p->bin) / sizeof(uint32_t)))
         bins = (sizeof(p->bin) / sizeof(uint32_t));
 
-    ChronoTime freq = chronoFreq;
-    if (flags & HistFlag::COUNTER)
-        freq = 1; // Hijack for counter
+    ChronoTime freq = 1000000000;
+    if (flags & HistFlag::COUNTER) freq = 1; // Hijack for counter
 
     if (flags & HistFlag::LOGX) // Log mode
     {
@@ -283,13 +269,9 @@ bool Chrono::config(float bin0, float binN, int bins, HistFlag flags, const char
 
 void Chrono::restart() { ((chrono_t *)mData)->lastTime = chronoGetCounter(); }
 
-void Chrono::event(uint64_t nowNs, int count)
+void Chrono::event(uint64_t now, int count)
 {
-    ChronoTime now;
-    if (nowNs == 0)
-        now = chronoGetCounter();
-    else
-        now = nowNs / (1000000000 / chronoFreq);
+    if (now == 0) now = chronoGetCounter();
     chrono_t *p = (chrono_t *)mData;
     if (p->events > 0) // First call is an edge case.  Number of logs of interval (sum(bins))
     {                  // equal to one les than the number of times update is called (count-1)
@@ -341,18 +323,17 @@ void Chrono::count(int val, int count)
 int32_t  Chrono::configCount() { return ((chrono_t *)mData)->configs; }
 int64_t  Chrono::eventCount() { return ((chrono_t *)mData)->events; }
 timespec Chrono::now() { return chronoNativeTimespec(chronoGetCounter()); }
-uint64_t Chrono::nowNs() { return (uint64_t)(chronoGetCounter() * (NS_PER_SECOND / chronoFreq)); }
+uint64_t Chrono::nowNs() { return chronoGetCounter(); }
 timespec Chrono::startTime() { return chronoNativeTimespec(((chrono_t *)mData)->startTime); }
 timespec Chrono::lastTime() { return chronoNativeTimespec(((chrono_t *)mData)->lastTime); }
-int64_t  Chrono::diffNs() { return ((chrono_t *)mData)->lastDiff * (NS_PER_SECOND / chronoFreq); }
-int64_t  Chrono::sinceNs() { return (chronoGetCounter() - ((chrono_t *)mData)->lastTime) * (NS_PER_SECOND / chronoFreq); }
+int64_t  Chrono::diffNs() { return  ((chrono_t *)mData)->lastDiff; }
+int64_t  Chrono::sinceNs() { return chronoGetCounter() - ((chrono_t *)mData)->lastTime; }
 int64_t  Chrono::periodNs()
 {
-    // The divide order here gives greater precision by scaling up by the ns resolution first
     chrono_t *p = (chrono_t *)mData;
     if (p->events <= 1)
         return 0;
-    return (p->lastTime - p->startTime) * (NS_PER_SECOND / chronoFreq) / (p->events - 1);
+    return (p->lastTime - p->startTime) / (p->events - 1);
 }
 
 inline uint32_t Chrono::rand() { ((chrono_t *)mData)->rand =  ((chrono_t *)mData)->rand * 0x0019660d + 0x3c6ef35f; return ((chrono_t *)mData)->rand; } // Classic rand PRNG
@@ -377,9 +358,8 @@ void Chrono::histogram(Histogram *h)
 {
     assert(h != nullptr);
     chrono_t * p    = (chrono_t *)mData;
-    ChronoTime freq = chronoFreq;
-    if (p->flags & HistFlag::COUNTER)
-        freq = 1;
+    ChronoTime freq = 1000000000;
+    if (p->flags & HistFlag::COUNTER) freq = 1;
 
     unsigned int AnInt = 0xFFFFFFE;                       // Be sure to use full precision sub and timespec and avoid overflow
     assert((unsigned int)*((HistType *)&AnInt) == AnInt); // Just to check hist_t is an int other wise we need to copy and cast bins

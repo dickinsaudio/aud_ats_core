@@ -95,13 +95,16 @@ using namespace Audinate::hist;
 // mapping rather than assume anything in the setup.
 //
 
-struct chrono_t; // Abstract the implementation
+struct chrono_t;          // Abstract the implementation
+enum   chrono_clock   { MONO = CLOCK_MONOTONIC_RAW, REALTIME = CLOCK_REALTIME, TAI = CLOCK_TAI };
 
 class Chrono
 {
   public:
     static uint64_t nowNs(); // Return the full time in ns - cast to uint32 to get the 32 bit rolling
-    static timespec now();   // Return now at same offset
+    static timespec now();   // Return now at same offset used by the current chrono timer
+    static chrono_clock getClock() { return clock; };             // Return the ID of the timer for this process
+    static void         setClock(chrono_clock c) { clock = c; };  // Set the ID of the timer for this process
 
     Chrono();
     ~Chrono();
@@ -151,6 +154,7 @@ class Chrono
 
   private:
     uint32_t rand();                                // A 32 bit random number seeded within this chrono - may optimize to nothing
+    static chrono_clock clock;                      // The clock to use for this process - should only set once
     char mData[64 + 4 + 4 + 8 + 8 + 8 + 8 + 8 + 4 + 4 + 101 * 4 + 4];
     // @Alan - is there a convenient way of doing this without exposing struct?
     // Note that the config has an assert to ensure this is correct size
