@@ -159,8 +159,8 @@ typedef struct Config
     Mode             mode          = ATS_INTERP_SPLINE5;  // General mode of operation flags with a sensible default
     float            inRate        = 48000.0F;            // The expected input sample rate
     float            outRate       = 48000.0F;            // The expected output sample rate
-    int              filterPush    = 200;                 // Window size for filtering the push offsets - at push rate
-    int              filterPop     = 200;                 // Window size for filtering the pop  offsets - at pop rate
+    uint32_t         filterPush    = 200;                 // Window size for filtering the push offsets - at push rate
+    uint32_t         filterPop     = 200;                 // Window size for filtering the pop  offsets - at pop rate
     int              trackTarget   = ATS_BUFFER_SIZE / 4; // The desired latency to track // FIXME: set better default value
     int              trackRange    = 0;                   // Drift before a reset			samples				0 is off
     float            trackKp       = 2.0F;                // Proportional gain 			ppm / samples		1.0 is around 1m to 1 sample at 48kHz
@@ -229,7 +229,7 @@ class Ats
 
   private:
     void atsTrack(); // Execute a tracking update - called in Pop
-    char mData[10448];
+    char mData[10544];
     // @Alan - is there a convenient way of doing this without exposing struct?
     // Note that the config has an assert to ensure this is correct size
 };

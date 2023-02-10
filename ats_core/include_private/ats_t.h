@@ -88,12 +88,14 @@ inline int       ats_4f28u_advance(ats_4f28u f, ats_4f28u s, int n)
            (((s & 0x0000FFFF) * n + f) >> 28); // Rounding error adjust with fraction
 }
 
+#define ATS_Offsets ((uint32_t)512)
+
 struct ats_t
 {
     Config    config;  // Everything in the config is considered stable after a setup
-    int       configs; // Number of times it has been configured
-    int       in;      // Location in ring of next input sample to be placed - integer
-    int       outN;    // Integer part of next output sample
+    uint32_t  configs; // Number of times it has been configured
+    uint32_t  in;      // Location in ring of next input sample to be placed - integer
+    uint32_t  outN;    // Integer part of next output sample
     ats_4f28u outF;    // Fractional part of next output sample
     ats_4f28u step;    // Sample step - 4.28 fixed point   Ratio of input to output sample rate
 
@@ -107,9 +109,9 @@ struct ats_t
     ats_4f28u trackStep0; // The nominal step of input samples for each output sample for outrate/inrate
     float     trackT;     // The average period in the tracking loop
 
-    int      pushOffsetN, popOffsetN; // Position index for storing the latest offsets
-    uint32_t pushOffset[500];         // Atomic invariant being a time offset position in the buffer
-    uint32_t popOffset[500];          // (difference in sample point and scaled wall clock) represented as 0..2^32
+    uint32_t pushOffsetN, popOffsetN; // Count of the push or pop (mod 2^32) and position index (mod )
+    uint32_t pushOffset[ATS_Offsets]; // Atomic invariant being a time offset position in the buffer
+    uint32_t popOffset[ATS_Offsets];  // (difference in sample point and scaled wall clock) represented as 0..2^32
         
     AtsData *data; // The working audio buffers
 };

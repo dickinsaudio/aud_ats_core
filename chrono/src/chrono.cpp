@@ -193,7 +193,7 @@ Chrono::Chrono()
     p->width = 1;                   // code past config count = 0 creating a div0 exception
     strncpy(p->name, "CHRONO NOT CONFIGURED", sizeof(p->name) - 1);
     p->lastDiff = 0;
-    p->lastTime = 0;
+    p->lastTime = chronoGetCounter();
 }
 
 Chrono::~Chrono() {}

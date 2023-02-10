@@ -156,30 +156,32 @@ uint32_t kth_smallest(uint32_t a[], int n, int k)
         if (k < i)
             m = j;
     }
-    return a[k];
+    if (k<n) return a[k];
+    if (n>0) return a[n-1];
+    else return 0;
 }
 
-uint32_t atsGetPosition(uint32_t *data, uint32_t offset, int N) // Filtering outliers and returning an estimate.
-{
-    uint32_t tmp[sizeof(((ats_t *)0)->pushOffset)/sizeof(uint32_t)];
-    if (N > (int)(sizeof(((ats_t *)0)->pushOffset)/sizeof(uint32_t))) N = sizeof(((ats_t *)0)->pushOffset)/sizeof(uint32_t);
-    for (int n = 0; n < N; n++)
-        tmp[n] = data[n] - offset - (1 << 31);
-    return kth_smallest(tmp, N, N - N/10 - 1) + offset + (1 << 31);
-}
-
+// Get the set of useful 
 uint32_t atsPushOffset(ats_t *p)
 {
-    if (p->config.filterPush == 0)
-        return p->in << (32 - ATS_BUFFER_SIZE_LOG2);
-    return atsGetPosition(p->pushOffset, p->pushOffset[p->pushOffsetN], p->config.filterPush);
+    uint32_t tmp[p->config.filterPush];
+    int use = std::min(p->config.filterPush, p->pushOffsetN);
+    if (use==0)  return p->in << (32 - ATS_BUFFER_SIZE_LOG2);
+
+    uint32_t offset = p->pushOffset[(p->pushOffsetN-1) % p->config.filterPush];
+    for (int n = 0; n < use; n++) tmp[n] = p->pushOffset[n] - offset - (1 << 31);
+    return kth_smallest(tmp, use, use - use/10 - 1) + offset + (1 << 31);
 }
 
 uint32_t atsPopOffset(ats_t *p)
 {
-    if (p->config.filterPop == 0)
-        return p->outN << (32 - ATS_BUFFER_SIZE_LOG2);
-    return atsGetPosition(p->popOffset, p->popOffset[p->popOffsetN], p->config.filterPop);
+    uint32_t tmp[p->config.filterPop];
+    int use = std::min(p->config.filterPop, p->popOffsetN);
+    if (use==0)  return p->outN << (32 - ATS_BUFFER_SIZE_LOG2);
+
+    uint32_t offset = p->popOffset[(p->popOffsetN-1) % p->config.filterPop];
+    for (int n = 0; n < use; n++) if (p->popOffset[n]) tmp[n] = p->popOffset[n] - offset - (1 << 31);
+    return kth_smallest(tmp, use, use - use/10 - 1) + offset + (1 << 31);
 }
 
 // Latency uses a bit more information to estimate, includes outlier removal (late calls) and relies on some estimate of period
@@ -280,14 +282,10 @@ bool Ats::config(Config *config)
     mAts->maxIntDivT = (int32_t)(4.294967296F * config->inRate * (1<<10));
     mAts->step       = mAts->trackStep0;
 
-    if (config->filterPush > (int)(sizeof(mAts->pushOffset) / sizeof(uint32_t)))
-        config->filterPush = sizeof(mAts->pushOffset) / sizeof(uint32_t);
-    if (config->filterPop > (int)(sizeof(mAts->popOffset) / sizeof(uint32_t)))
-        config->filterPop = sizeof(mAts->popOffset) / sizeof(uint32_t);
+    config->filterPush = std::min(config->filterPush, ATS_Offsets);
+    config->filterPop  = std::min(config->filterPop,  ATS_Offsets);
     mAts->pushOffsetN = 0;
     mAts->popOffsetN  = 0;
-    memset(mAts->pushOffset, 0, sizeof(mAts->pushOffset));
-    memset(mAts->popOffset, 0, sizeof(mAts->popOffset));
 
     memcpy(&mAts->config, config, sizeof(Config));
     mAts->configs++;
@@ -309,11 +307,11 @@ void Ats::atsTrack()
 {
     ats_t *p = (ats_t *)mData;
 
-    if (p->chrono[TRACK].sinceNs() < 10000000)
-        return;
+    if (p->chrono[TRACK].sinceNs() < 10000000) return;                      // Throttle tracking calls
     p->chrono[TRACK].event();
+    if (p->pushOffsetN<10 || p->popOffsetN<10) return;                      // Don't track if no information
 
-    p->trackT     = 0.5E-9F * p->chrono[TRACK].diffNs() + 0.5F * p->trackT; // Mild smoothing
+    p->trackT     = 0.5E-9F * p->chrono[TRACK].diffNs() + 0.5F * p->trackT; // Mild smoothing - used to calculate integration
     float latency = getLatency();                                           // Latency
     float error   = ((float)p->config.trackTarget - latency);               // Error in samples
 
@@ -367,9 +365,11 @@ void Ats::trackReset() // Reset the tracking state (integrator) and bump from th
     p->trackSlew  = 0;
     p->step       = p->trackStep0;
     // Give things the working space (target)
-    p->outN       = MOD(p->in - p->config.trackTarget);
+    p->outN       = MOD(p->in - p->config.trackTarget/2);
     // Probably doing this because things are in a mess - so clear history
-    for (int n = 0; n < p->config.filterPop; n++) p->popOffset[n] = 0;
+    p->chrono[TRACK].reset();
+    p->pushOffsetN = 0;
+    p->popOffsetN = 0;  
 }
 
 void Ats::trace(std::FILE *f)
@@ -382,9 +382,9 @@ void Ats::trace(std::FILE *f)
         now,                           // 1  TIME
         getLatency(),                  // 2  LATENCY
         getRate(),                     // 3  RATE
-        p->pushOffset[p->pushOffsetN], // 4  LAST RAW PUSH OFFSET
+        p->pushOffset[(p->pushOffsetN-1)%p->config.filterPush], // 4  LAST RAW PUSH OFFSET
         atsPushOffset(p),              // 5  FILTERED PUSH OFFSET
-        p->popOffset[p->popOffsetN],   // 6  LAST RAW POP OFFSET
+        p->popOffset[(p->popOffsetN-1)%p->config.filterPop],   // 6  LAST RAW POP OFFSET
         atsPopOffset(p),               // 7  FILTERED POP OFFSET
         p->trackProp * 1E3F,           // 8  PROPORTIONAL ADJUST ppb
         p->trackInt * 1E3F,            // 9  INTEGRAL     ADJUST ppb
@@ -414,9 +414,8 @@ void Ats::push(int samples, int sampleStride, int channelStride, int32_t *data, 
 
     // Convert sample point and time to 0..2^32.
     if (p->config.filterPush) {
-        uint32_t offset               = (uint32_t)((((uint64_t)p->in + samples) << (32 - ATS_BUFFER_SIZE_LOG2)) - (((callTime) * p->maxIntDivT) >> (10 + ATS_BUFFER_SIZE_LOG2)));
-        p->pushOffsetN                = (p->pushOffsetN + 1) % p->config.filterPush;
-        p->pushOffset[p->pushOffsetN] = offset;
+        uint32_t offset = (uint32_t)((((uint64_t)p->in + samples) << (32 - ATS_BUFFER_SIZE_LOG2)) - (((callTime) * p->maxIntDivT) >> (10 + ATS_BUFFER_SIZE_LOG2)));
+        p->pushOffset[p->pushOffsetN++ % p->config.filterPush] = offset;
     }
 
     if (!(p->config.mode & ATS_TRACKING_OFF))
@@ -456,10 +455,10 @@ void Ats::pop(int samples, int sampleStride, int channelStride, AtsData *dst, in
 
     // Invariant based on first sample - as this is closest to what is about to be played out
     if (p->config.filterPop) {
-        p->popOffsetN = (p->popOffsetN + 1) % p->config.filterPop;
-        p->popOffset[p->popOffsetN]  = (uint32_t)( ( (uint64_t)p->outN<<(32-ATS_BUFFER_SIZE_LOG2)) +
-                                                   (           p->outF>>(ATS_BUFFER_SIZE_LOG2-4))  -			// Include fractional part
-                                                   (((callTime)*p->maxIntDivT)>>(10+ATS_BUFFER_SIZE_LOG2)) );
+        uint32_t offset = (uint32_t)( ( (uint64_t)p->outN<<(32-ATS_BUFFER_SIZE_LOG2)) +
+                                      (           p->outF>>(ATS_BUFFER_SIZE_LOG2-4))  -			// Include fractional part
+                                      (((callTime)*p->maxIntDivT)>>(10+ATS_BUFFER_SIZE_LOG2)) );
+        p->popOffset[p->popOffsetN++ % p->config.filterPop]  = offset;
     }
 
     int need = ats_4f28u_advance(p->outF, p->step, samples); // Precise calc of required samples - how far outN will move
