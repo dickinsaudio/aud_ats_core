@@ -366,12 +366,10 @@ void Ats::trackReset() // Reset the tracking state (integrator) and bump from th
     p->trackInt   = 0;
     p->trackSlew  = 0;
     p->step       = p->trackStep0;
-    float latency = getLatency();                             // Latency
-    float error   = ((float)p->config.trackTarget - latency); // Error in samples
-    p->outN       = MOD(p->outN - (int)(error + 0.5));
-    for (int n = 0; n < p->config.filterPop; n++)
-        p->popOffset[n] -= ((int)error) << (32 - ATS_BUFFER_SIZE_LOG2);
-    // We moved the Pop pointer, so adjust all of the values in the pop offset history
+    // Give things the working space (target)
+    p->outN       = MOD(p->in - p->config.trackTarget);
+    // Probably doing this because things are in a mess - so clear history
+    for (int n = 0; n < p->config.filterPop; n++) p->popOffset[n] = 0;
 }
 
 void Ats::trace(std::FILE *f)
