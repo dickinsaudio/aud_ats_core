@@ -107,6 +107,7 @@ class Chrono
     static void         setClock(chrono_clock c) { clock = c; };  // Set the ID of the timer for this process
 
     Chrono();
+    Chrono(float bin0, float binN, int bins=101, HistFlag flags=HistFlag::DITHER, const char* name=nullptr) : Chrono() { this->config(bin0,binN,bins,flags,name); }
     ~Chrono();
 
     bool config(

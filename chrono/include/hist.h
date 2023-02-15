@@ -169,6 +169,9 @@ class Histogram
 {
   public:
     Histogram();
+    Histogram(float bin0, float binN, int bins=100, HistFlag flags=HistFlag::DITHER, const char *name = nullptr) : Histogram()
+    { this->config(bin0, binN, bins, flags, name); };
+
     ~Histogram();
 
     bool config(
