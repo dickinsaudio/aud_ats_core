@@ -63,7 +63,6 @@
 #endif
 
 #include "chrono.h"
-#include "versions.h"
 #include <assert.h>
 #include <cwchar>
 #include <math.h>
@@ -379,12 +378,6 @@ void Chrono::histogram(Histogram *h)
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Versions
 
-const char * Chrono::versionFull() { return ATS_CORE_GIT_COMPONENT_TAG_VERSION_FULL; }
-const char * Chrono::versionHash() { return ATS_CORE_GIT_HASH_SHORT; }
-unsigned int Chrono::versionMajor() { return ATS_CORE_GIT_VERSION_MAJOR; }
-unsigned int Chrono::versionMinor() { return ATS_CORE_GIT_VERSION_MINOR; }
-unsigned int Chrono::versionPatch() { return ATS_CORE_GIT_VERSION_PATCH; }
-const char * Chrono::versionSuffix() { return ATS_CORE_GIT_VERSION_SUFFIX; }
 
 }} // namespace Audinate::chrono
 

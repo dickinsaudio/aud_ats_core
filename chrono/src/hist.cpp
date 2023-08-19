@@ -63,7 +63,6 @@
 #endif
 
 #include "hist.h"
-#include "versions.h"
 #include <assert.h>
 #include <math.h>
 #include <stdio.h>
@@ -742,13 +741,6 @@ bool Histogram::text(int barHeight, char *str, HistTextOption flags, int yMax, c
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Versions
-
-const char * Histogram::versionFull() { return ATS_CORE_GIT_COMPONENT_TAG_VERSION_FULL; }
-const char * Histogram::versionHash() { return ATS_CORE_GIT_HASH_SHORT; }
-unsigned int Histogram::versionMajor() { return ATS_CORE_GIT_VERSION_MAJOR; }
-unsigned int Histogram::versionMinor() { return ATS_CORE_GIT_VERSION_MINOR; }
-unsigned int Histogram::versionPatch() { return ATS_CORE_GIT_VERSION_PATCH; }
-const char * Histogram::versionSuffix() { return ATS_CORE_GIT_VERSION_SUFFIX; }
 
 }} // namespace Audinate::hist
 
